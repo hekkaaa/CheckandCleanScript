@@ -34,334 +34,239 @@ $UninstalCMDLine = '/S' #Ключи удаления exe
 
 function ExplorerModule {
 
-Invoke-Command -ComputerName $Computer -ScriptBlock{
+  Invoke-Command -ComputerName $Computer -ScriptBlock{
+     param($Programms,$version1,$Module)
+     $SelectInfoProgramm = Get-Package -Name $Programms -MaximumVersion $version1
 
-param($Programms,$version1,$Module)
+     if ($SelectInfoProgramm.Name){
+ 
+      if ($SelectInfoProgramm.Version -eq $version1){
+        $exit = 'Программа '+'"'+$SelectInfoProgramm.Name +'"' +' актуальной версии ' + $version1
+         return $exit
+       
+      }
+      else {
 
-$SelectInfoProgramm = Get-Package -Name $Programms -MaximumVersion $version1
+        $VariableCheck = '' # очистка переменной
+        $VariableCheck = '*'+$Programms
+        $InstallProviderCheck = Get-Package -Name $Programms
+        $exit ="Программа "+ $SelectInfoProgramm.Name +" Версии " + $SelectInfoProgramm.Version + " ниже необходимой: " + $version1 + " | Установлен с помощью: " + $InstallProviderCheck.ProviderName
+        return $exit
 
-if ($SelectInfoProgramm.Name){
+        }
+     }
 
-if ($SelectInfoProgramm.Version -eq $version1){
+     else {
 
-$exit = 'Программа '+'"'+$SelectInfoProgramm.Name +'"' +' актуальной версии ' + $version1
+      $exit = 'Программа '+ '"' + $Programms + '"' +' не найдена на ПК либо версии выше указанной ' + $version1
+      return $exit
 
-return $exit
-
-}
-
-else {
-
-$VariableCheck = '' # очистка переменной
-
-$VariableCheck = '*'+$Programms
-
-$InstallProviderCheck = Get-Package -Name $Programms
-
-$exit ="Программа "+ $SelectInfoProgramm.Name +" Версии " + $SelectInfoProgramm.Version + " ниже необходимой: " + $version1 + " | Установлен с помощью: " + $InstallProviderCheck.ProviderName
-
-return $exit
-
-}
-
-}
-
-else {
-
-$exit = 'Программа '+ '"' + $Programms + '"' +' не найдена на ПК либо версии выше указанной ' + $version1
-
-return $exit
-
-}
-
-} -ArgumentList $Programms,$version1,$Module -ErrorAction SilentlyContinue
+     }
+  } -ArgumentList $Programms,$version1,$Module -ErrorAction SilentlyContinue
 
 }
 
 function UninstalInstalModule {
 
-Invoke-Command -ComputerName $Computer -ScriptBlock{
+  Invoke-Command -ComputerName $Computer -ScriptBlock{
+    param($Programms,$version1,$CMDLine1,$sourcePath,$Module,$UninstalCMDLine)
+    $SelectInfoProgramm = Get-Package -Name $Programms -MaximumVersion $version1
 
-param($Programms,$version1,$CMDLine1,$sourcePath,$Module,$UninstalCMDLine)
+    if ($SelectInfoProgramm.Name){
 
-$SelectInfoProgramm = Get-Package -Name $Programms -MaximumVersion $version1
+      if ($SelectInfoProgramm.Version -eq $version1){
+      $exit = 'Программа '+'"'+$SelectInfoProgramm.Name +'"' +' актуальной версии ' + $version1
+      return $exit
+    }
 
-if ($SelectInfoProgramm.Name){
+    else {
 
-if ($SelectInfoProgramm.Version -eq $version1){
+      $VariableCheck = '' # очистка переменной
+      $VariableCheck = '*'+$Programms
+      $CheckProcess = Get-Process -Name $VariableCheck
+      
+        if ($CheckProcess){
+    ###### Если процесс запущен то сразу конец
+          $ex1 = 'Запущенные процессы ' + $CheckProcess.Name +' найдены. Процесс остановлен.'
+          $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой:' + $version1 + ' Требуется переустановка ' + $ex1
+          return $exit
+        }
 
-$exit = 'Программа '+'"'+$SelectInfoProgramm.Name +'"' +' актуальной версии ' + $version1
+       else {
 
-return $exit
+        $Pkg = Get-Package -Name $SelectInfoProgramm.Name
+        # Тут начинаются ветки.
+        if ($Pkg.ProviderName -eq "Programs") {
+        # тут ветка удаления EXE
+          $ex2 = "Запущенных процессов нет"
+          $Pkg = Get-Package -Name $SelectInfoProgramm.Name
+          $UninstallCommand = $Pkg.Meta.Attributes['UninstallString']
+          $code = (Start-Process -FilePath $UninstallCommand -ArgumentList $UninstalCMDLine -Verb runAs -Wait -Passthru).ExitCode
 
-}
+          if ($code -eq 0){
+          ########## ЛОГИКА УСТАНОВКИ MSI и EXE
+            $ProgramName = Split-Path $sourcePath -Leaf
+            $VariableExtension = Get-ItemProperty -Path "C:\Temp\$ProgramName"
 
-else {
+            if ($VariableExtension.Extension -eq ".exe"){
+            #Установщих exe
+            $code = (Start-Process "C:\Temp\$ProgramName" -ArgumentList $CMDLine1 -Verb runAs -Wait -Passthru).ExitCode;
+            
+              if ($code -eq 0){
 
-$VariableCheck = '' # очистка переменной
+                $ex2_2 = "$ProgramName Установлен!"
+                $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
+                Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+                return $exit
 
-$VariableCheck = '*'+$Programms
+              }
 
-$CheckProcess = Get-Process -Name $VariableCheck
+              else{
 
-if ($CheckProcess){
+                $ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
+                $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
+                Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+                return $exit
 
-###### Если процесс запущен то сразу конец
+              }
 
-$ex1 = 'Запущенные процессы ' + $CheckProcess.Name +' найдены. Процесс остановлен.'
+          }
 
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой:' + $version1 + ' Требуется переустановка ' + $ex1
+          elseif ($VariableExtension.Extension -eq ".msi"){
 
-return $exit
+          #Установка MSI
+          $code = (Start-Process "C:\Windows\System32\msiexec.exe" -ArgumentList $CMDLineMSI -Verb runAs -Wait -Passthru).ExitCode;
 
-}
+            if ($code -eq 0){
+            $ex2_2 = "$ProgramName Установлен!"
+            $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
+            Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+            return $exit
 
-else {
+            }
 
-$Pkg = Get-Package -Name $SelectInfoProgramm.Name
+            else{
 
-# Тут начинаются ветки.
+              $ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
+              $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
+              Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+              return $exit
 
-if ($Pkg.ProviderName -eq "Programs") {
+           }
 
-# тут ветка удаления EXE
+        }
 
-$ex2 = "Запущенных процессов нет"
+        else {
 
-$Pkg = Get-Package -Name $SelectInfoProgramm.Name
+        Write-Host 'ERROR FORMAT install FILES!' -ForegroundColor 'Red'
 
-$UninstallCommand = $Pkg.Meta.Attributes['UninstallString']
+        }
 
-$code = (Start-Process -FilePath $UninstallCommand -ArgumentList $UninstalCMDLine -Verb runAs -Wait -Passthru).ExitCode
+      }
 
-if ($code -eq 0){
+      else {
 
-########## ЛОГИКА УСТАНОВКИ MSI и EXE
+      $ex1_2 = 'Что то пошло не так ПО еще на месте при удалении программы с ProviderName EXE '
+      $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановка ' + $ex2 +' | ' + $ex1_2
+      return $exit
 
-$ProgramName = Split-Path $sourcePath -Leaf
+      }
 
-$VariableExtension = Get-ItemProperty -Path "C:\Temp\$ProgramName"
+  }
 
-if ($VariableExtension.Extension -eq ".exe"){
+  elseif ($Pkg.ProviderName -eq "msi"){
 
-#Установщих exe
+  # ветка удаление/установки MSI
+  $ex2 = "Запущенных процессов нет"
+  Get-Package -Name $SelectInfoProgramm.Name | Uninstall-Package -Force | Out-Null
+  $PostInistallCheck = Get-Package -Name $SelectInfoProgramm.Name
 
-$code = (Start-Process "C:\Temp\$ProgramName" -ArgumentList $CMDLine1 -Verb runAs -Wait -Passthru).ExitCode;
+    if ($PostInistallCheck){
+    $ex1_2 = 'Что то пошло не так ПО еще на месте при удалении при удалении программы с ProviderName MSI'
+    $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановка ' + $ex2 +' | ' + $ex1_2
+    return $exit
 
-if ($code -eq 0)
+    }
 
-{
+    else {
+    ########## ЛОГИКА УСТАНОВКИ MSI и EXE
+    $ProgramName = Split-Path $sourcePath -Leaf
+    $VariableExtension = Get-ItemProperty -Path "C:\Temp\$ProgramName"
+    
+    if ($VariableExtension.Extension -eq ".exe"){
+      #Установщих exe
+      # Тут требуется проверка и доработка импорта ключей.
+      $code = (Start-Process "C:\Temp\$ProgramName" -ArgumentList $CMDLine1 -Verb runAs -Wait -Passthru).ExitCode;
 
-$ex2_2 = "$ProgramName Установлен!"
+        if ($code -eq 0){
 
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
+          $ex2_2 = "$ProgramName Установлен!"
+          $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
+          Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+          return $exit
 
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+        }
 
-return $exit
+        else{
 
-}
+        $ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
+        $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
+        Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+        return $exit
 
-else
+        }
 
-{
+     }
 
-$ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
+      elseif ($VariableExtension.Extension -eq ".msi"){
 
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
+      #Установка MSI
+      $code = (Start-Process "C:\Windows\System32\msiexec.exe" -ArgumentList $$CMDLineMSI -Verb runAs -Wait -Passthru).ExitCode;
 
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+        if ($code -eq 0){
 
-return $exit
+          $ex2_2 = "$ProgramName Установлен!"
+          $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
+          Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+          return $exit
+          
+       }
 
-}
+       else {
 
-}
+        $ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
+        $exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
+        Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+        return $exit
 
-elseif ($VariableExtension.Extension -eq ".msi"){
+        }
 
-#Установка MSI
+     }
 
-$code = (Start-Process "C:\Windows\System32\msiexec.exe" -ArgumentList $CMDLineMSI -Verb runAs -Wait -Passthru).ExitCode;
+      else {
 
-if ($code -eq 0)
+      Write-Host 'ERROR FORMAT install FILES!' -ForegroundColor 'Red'
 
-{
+      }
 
-$ex2_2 = "$ProgramName Установлен!"
+    }
 
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
+  }
 
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
+  else {
 
-return $exit
+  Write-Host 'ERROR FORMAT Uninstal FILES!' -ForegroundColor 'Red'
 
-}
+  }
 
-else
-
-{
-
-$ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
-
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
-
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
-
-return $exit
-
-}
-
-}
-
-else {
-
-Write-Host 'ERROR FORMAT install FILES!' -ForegroundColor 'Red'
-
-}
-
-}
-
-else {
-
-$ex1_2 = 'Что то пошло не так ПО еще на месте при удалении программы с ProviderName EXE '
-
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановка ' + $ex2 +' | ' + $ex1_2
-
-return $exit
-
-}
-
-}
-
-elseif ($Pkg.ProviderName -eq "msi"){
-
-# ветка удаление/установки MSI
-
-$ex2 = "Запущенных процессов нет"
-
-Get-Package -Name $SelectInfoProgramm.Name | Uninstall-Package -Force | Out-Null
-
-$PostInistallCheck = Get-Package -Name $SelectInfoProgramm.Name
-
-if ($PostInistallCheck){
-
-$ex1_2 = 'Что то пошло не так ПО еще на месте при удалении при удалении программы с ProviderName MSI'
-
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановка ' + $ex2 +' | ' + $ex1_2
-
-return $exit
-
-}
-
-else {
-
-########## ЛОГИКА УСТАНОВКИ MSI и EXE
-
-$ProgramName = Split-Path $sourcePath -Leaf
-
-$VariableExtension = Get-ItemProperty -Path "C:\Temp\$ProgramName"
-
-if ($VariableExtension.Extension -eq ".exe"){
-
-#Установщих exe
-
-# Тут требуется проверка и доработка импорта ключей.
-
-$code = (Start-Process "C:\Temp\$ProgramName" -ArgumentList $CMDLine1 -Verb runAs -Wait -Passthru).ExitCode;
-
-if ($code -eq 0)
-
-{
-
-$ex2_2 = "$ProgramName Установлен!"
-
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
-
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
-
-return $exit
-
-}
-
-else
-
-{
-
-$ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
-
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
-
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
-
-return $exit
-
-}
-
-}
-
-elseif ($VariableExtension.Extension -eq ".msi"){
-
-#Установка MSI
-
-$code = (Start-Process "C:\Windows\System32\msiexec.exe" -ArgumentList $$CMDLineMSI -Verb runAs -Wait -Passthru).ExitCode;
-
-if ($code -eq 0)
-
-{
-
-$ex2_2 = "$ProgramName Установлен!"
-
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Переустановлено ' + " | " + $ex2_2
-
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
-
-return $exit
-
-}
-
-else
-
-{
-
-$ex2_2_2 ="BAD - TOTALY FAILED - $ProgramName не установлен! $code"
-
-$exit ='Программа '+ $SelectInfoProgramm.Name +' Версии ' + $SelectInfoProgramm.Version + ' ниже необходимой: ' + $version1 + ' Нужна ручная установка ' + $ex2 + " | " + $ex2_2_2
-
-Remove-Item -Path "C:\Temp\$ProgramName" -Force | Out-Null
-
-return $exit
+ }
 
 }
 
 }
 
 else {
-
-Write-Host 'ERROR FORMAT install FILES!' -ForegroundColor 'Red'
-
-}
-
-}
-
-}
-
-else {
-
-Write-Host 'ERROR FORMAT Uninstal FILES!' -ForegroundColor 'Red'
-
-}
-
-}
-
-}
-
-}
-
-else {
-
 $exit = 'Программа '+ '"' + $Programms + '"' +' не найдена на ПК либо версии выше указанной ' + $version1
-
 return $exit
 
 }
@@ -379,7 +284,6 @@ return ExplorerModule
 else {
 
 Copy-Item $sourcePath -Destination $Share -Force
-
 return UninstalInstalModule
 
 }
@@ -391,7 +295,6 @@ $ErrorLog = $Error[0].Exception
 if ($ErrorLog){
 
 $exit1 = $ErrorLog
-
 return $exit1
 
 }
@@ -409,15 +312,11 @@ Out-Null #заглушка.
 #####################################################################################################################
 
 ######### создание файла отчета #########
-
 $TimeIndex = Get-Date -Format "dd/MM/yyyy_HH/mm"
-
 $TimeIndex = $TimeIndex +'.txt'
-
 New-Item -Name $TimeIndex -Path "C:\Temp\lotusUPdate" -Force | Out-Null
 
 ##### цикл ########
-
 $i = 0 # Переменная для счетчика.
 
 foreach($Computer in $comp) {
@@ -428,37 +327,34 @@ Write-Host "Обрабатывается: " $i " из " $comp.Length #Счетч
 
 $test1 = Test-Connection -computer $Computer -quiet -Count 2 -Delay 1
 
-if ($test1 -eq 'True') {
+  if ($test1 -eq 'True') {
 
-$SelectInfoFunc = FuncInfo $Computer
+  $SelectInfoFunc = FuncInfo $Computer
+  #Запись в лог
+  #разделено логикой потому как вывод ошибки из функции одновременно летит с успешной проверкой. из invoke-command $error.clear() не работает.
 
-#Запись в лог
+    if ($SelectInfoFunc.Length -gt 2){
 
-#разделено логикой потому как вывод ошибки из функции одновременно летит с успешной проверкой. из invoke-command $error.clear() не работает.
+    $Computer + ' | ' + $SelectInfoFunc | Out-File -FilePath C:\Temp\explorefile\$TimeIndex -Append
 
-if ($SelectInfoFunc.Length -gt 2){
+    }
 
-$Computer + ' | ' + $SelectInfoFunc | Out-File -FilePath C:\Temp\explorefile\$TimeIndex -Append
+    else {
 
-}
+    $Computer + ' | ' + $SelectInfoFunc[0] | Out-File -FilePath C:\Temp\explorefile\$TimeIndex -Append
 
-else {
+    }
 
-$Computer + ' | ' + $SelectInfoFunc[0] | Out-File -FilePath C:\Temp\explorefile\$TimeIndex -Append
-
-}
-
-}
+  }
 
 #Если машина не в сети.
 
-else {
+  else {
 
-#Запись в лог
+  #Запись в лог
+  "Машина " + $Computer + " не в сети" | Out-File -FilePath C:\Temp\explorefile\$TimeIndex -Append
 
-"Машина " + $Computer + " не в сети" | Out-File -FilePath C:\Temp\explorefile\$TimeIndex -Append
-
-}
+  }
 
 }
 
